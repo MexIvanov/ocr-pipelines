@@ -8,10 +8,8 @@ from ollama import Client
 from tqdm import tqdm
 from io import BytesIO
 from PIL import Image, ImageOps
-
 from doctr.models._utils import estimate_orientation
 from pdf2image import convert_from_path
-#from docx2pdf import convert as docx_to_pdf
 
 
 MODEL = "benhaotang/Nanonets-OCR-s:F16"
@@ -33,22 +31,20 @@ def invert_image(img):
     return inverted_img
 
 def convert_to_imgs(file):
+    """Convert PDF to images
     """
-    Конвертирует файлы DOCX и PDF в изображения, сохраняет метаданные.
-    """
-    images = []
 
+    images = []
     path = pathlib.Path(file)
     
     if not path.exists():
-        print(f"Файл не найден: {file}")
+        print(f"File not found: {file}")
 
-    # Convert PDF -> Images
     try:
-        new_imgs = convert_from_path(file, dpi=300, thread_count=4)#, output_folder="./outpics")
+        new_imgs = convert_from_path(file, dpi=300, thread_count=4) #, output_folder="./outpics")
         images.extend(new_imgs)
     except Exception as e:
-        print(f"Ошибка обработки PDF {file}: {e}")
+        print(f"Error converting PDF {file}: {e}")
 
     return images
 
@@ -56,7 +52,6 @@ def prompt_ollama_with_retry(img_b64, client, options, max_attempts=3):
     attempts = 0
     while attempts < max_attempts:
         try:
-            # Your operation here
             start = time.time()
 
             response = client.chat(model=MODEL, messages=[
@@ -92,6 +87,10 @@ def drop_to_rejects(pil_image, outfile, page):
     pil_image.save(rej_fname, format="PNG")
     print(f"[REJECT] Saved file in: {rej_fname}")
 
+def write_file(fname, text):
+    with open(fname, 'w+', encoding="utf-8") as f:
+        f.write(text)
+
 def process_images(client, outfile, images):
     responses = []
     total_doc_time = 0
@@ -125,9 +124,7 @@ def process_images(client, outfile, images):
             total_doc_time += processing_time_s
             responses.append({'page': idx, 'ocr': ocr, 'time': processing_time_s, 'image': stock_pil_img})
             print(f"{outfile}, page: {idx}, proc. time: {processing_time_s} s")
-
-            with open(f"{outfile}-{idx}.txt", 'w+', encoding="utf-8") as f:
-                f.write(ocr)
+            write_file(f"./output/{outfile}-{idx}.txt", ocr)
 
     mean_time = total_doc_time / (len(images) - rejected_img_count)
     print(f"Mean page processing time for current document: {mean_time}")
@@ -138,30 +135,26 @@ def process_images(client, outfile, images):
         img_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
         retries = 0
-        while page['time'] > mean_time + 15.0:#5.0:
+        while page['time'] > mean_time + 15.0 and retries < 3: #5.0:
             ocr, ptime = process_single_image(client, outfile, img_b64, page["page"])
             page['time'] = ptime
             page['ocr'] = ocr
 
-            if retries > 3:
-                if page['time'] > mean_time + 15.0:
-                    drop_to_rejects(page['image'], outfile, page=page['page'])
-                    print(f"[REJECT] Giving up ocr after {retries} retries")
-                    break
-
-                print(retries)
-                break
-
             retries += 1
             print(retries)
+            
+       
+        if page['time'] > mean_time + 15.0 or page['ocr'] == None:
+            drop_to_rejects(page['image'], outfile, page=page['page'])
+            print(f"[REJECT] Giving up ocr after {retries} retries")
+        
+        elif retries > 0:
+            write_file(f"output/{outfile}-{page['page']}.txt", page['ocr'])
 
 def process_single_image(client, outfile, img_b64, page):
     ocr, processing_time_s = prompt_ollama_with_retry(img_b64, client, {"num_predict": 4096, "temperature": 0.7, "repeat_penalty": 0.7 })
     print(f"{outfile}, page: {page}, proc. time: {processing_time_s} s")
-
-    with open(f"{outfile}-{page}.txt", 'w+', encoding="utf-8") as f:
-        f.write(ocr)
-
+    
     return ocr, processing_time_s
 
 def main():
@@ -169,7 +162,7 @@ def main():
     files = [item for item in path.iterdir() if item.is_file()]
     for infile in tqdm(files):
         images = convert_to_imgs(infile)
-        outfile = "output/" + pathlib.Path(infile).stem
+        outfile = pathlib.Path(infile).stem
         process_images(client, outfile, images)
 
 main()

@@ -1,17 +1,17 @@
 import time
-import base64
 import pathlib
 import numpy as np
 import matplotlib.pyplot as plt
 import easyocr
+
 from tqdm import tqdm
 from io import BytesIO
 from PIL import Image, ImageOps
-
 from doctr.models._utils import estimate_orientation
 from pdf2image import convert_from_path
-#from docx2pdf import convert as docx_to_pdf
 
+
+LANGS = ['ru']
 
 def invert_image(img):
     # For RGBA images, handle transparency
@@ -29,22 +29,21 @@ def invert_image(img):
     return inverted_img
 
 def convert_to_imgs(file):
+    """Convert PDF to images
     """
-    Конвертирует файлы DOCX и PDF в изображения, сохраняет метаданные.
-    """
-    images = []
 
+    images = []
     path = pathlib.Path(file)
     
     if not path.exists():
-        print(f"Файл не найден: {file}")
+        print(f"File not found: {file}")
 
     # Convert PDF -> Images
     try:
-        new_imgs = convert_from_path(file, dpi=300, thread_count=4)#, output_folder="./outpics")
+        new_imgs = convert_from_path(file, dpi=300, thread_count=4) #, output_folder="./outpics")
         images.extend(new_imgs)
     except Exception as e:
-        print(f"Ошибка обработки PDF {file}: {e}")
+        print(f"Error converting PDF {file}: {e}")
 
     return images
 
@@ -63,18 +62,22 @@ def prompt_easyocr_with_retry(reader, img_nparr, max_attempts=3):
 
         except Exception as e:
             attempts += 1
-            print(f"EeasyOCR model prompt {attempts} failed: {str(e)}")
+            print(f"EasyOCR model prompt {attempts} failed: {str(e)}")
             # Optional delay before retry
             time.sleep(1)
 
             if attempts == max_attempts:
-                print(f"[REJECT] EeasyOCR model prompt {attempts} failed: {str(e)}")
+                print(f"[REJECT] EasyOCR model prompt {attempts} failed: {str(e)}")
                 return None, None
 
 def drop_to_rejects(pil_image, outfile, page):
     rej_fname = f"./rejects/{outfile}-{page}.png"
     pil_image.save(rej_fname, format="PNG")
     print(f"[REJECT] Saved file in: {rej_fname}")
+
+def write_file(fname, text):
+    with open(fname, 'w+', encoding="utf-8") as f:
+        f.write(text)
 
 def process_images(reader, outfile, images):
     responses = []
@@ -109,20 +112,19 @@ def process_images(reader, outfile, images):
             responses.append({'page': idx, 'ocr': ocr, 'time': processing_time_s, 'image': stock_pil_img})
             print(f"{outfile}, page: {idx}, proc. time: {processing_time_s} s")
 
-            with open(f"{outfile}-{idx}.txt", 'w+', encoding="utf-8") as f:
-                f.write(' '.join(ocr))
+            write_file(f"./output/{outfile}-{idx}.txt", ' '.join(ocr))
 
     mean_time = total_doc_time / (len(images) - rejected_img_count)
     print(f"Mean page processing time for current document: {mean_time}")
 
 def main():
-    reader = easyocr.Reader(['ru']) # this needs to run only once to load the model into memory
+    reader = easyocr.Reader(LANGS) # this needs to run only once to load the model into memory
     path = pathlib.Path("input")
     # List only files
     files = [item for item in path.iterdir() if item.is_file()]
     for infile in tqdm(files):
         images = convert_to_imgs(infile)
-        outfile = "output/" + pathlib.Path(infile).stem
+        outfile = pathlib.Path(infile).stem
         process_images(reader, outfile, images)
 
 main()
