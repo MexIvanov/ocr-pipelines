@@ -115,7 +115,7 @@ def get_non_processed_pdfs(input_folder="./input", output_folder="./output"):
     
     # Return difference between sets
     diff = pdf_files - output_files
-    np_pdf_files = {f'{name}.pdf' for name in diff}
+    np_pdf_files = {f'./input/{name}.pdf' for name in diff}
     return np_pdf_files
 
 def process_images(client, outfile, images):
@@ -176,7 +176,7 @@ def process_images(client, outfile, images):
             print(f"[REJECT] Giving up ocr after {retries} retries")
         
         elif retries > 0:
-            write_file(f"output/{outfile}-{page['page']}.txt", page['ocr'])
+            write_file(f"./output/{outfile}-{page['page']}.txt", page['ocr'])
 
 def process_single_image(client, outfile, img_b64, page):
     ocr, processing_time_s = prompt_ollama_with_retry(img_b64, client, {"num_predict": 4096, "temperature": 0.7, "repeat_penalty": 0.7 })
