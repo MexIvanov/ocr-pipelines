@@ -1,9 +1,9 @@
 import time
 import base64
-import pathlib
 import numpy as np
 import matplotlib.pyplot as plt
 
+from pathlib import Path
 from ollama import Client
 from tqdm import tqdm
 from io import BytesIO
@@ -35,7 +35,7 @@ def convert_to_imgs(file):
     """
 
     images = []
-    path = pathlib.Path(file)
+    path = Path(file)
     
     if not path.exists():
         print(f"File not found: {file}")
@@ -90,6 +90,33 @@ def drop_to_rejects(pil_image, outfile, page):
 def write_file(fname, text):
     with open(fname, 'w+', encoding="utf-8") as f:
         f.write(text)
+
+def get_non_processed_pdfs(input_folder="./input", output_folder="./output"):
+    """
+    Process filenames from input and output folders.
+    
+    Args:
+        input_folder (str): Name of folder containing PDF files
+        output_folder (str): Name of folder containing paginated text files
+    
+    Returns:
+        set: Set of unique filenames from input folder - output 
+    """
+    # Get list of PDF filenames from input folder
+    input_path = Path(input_folder)
+    pdf_files = set(item.stem for item in input_path.iterdir() 
+                if item.is_file() and item.suffix.lower() == '.pdf')
+    
+    # Get base filenames from output folder
+    output_path = Path(output_folder)
+    output_files = set(item.stem.split('-')[0] for item in output_path.iterdir()
+                   if item.is_file() and item.suffix.lower() == '.txt'
+                   and '-' in item.stem)
+    
+    # Return difference between sets
+    diff = pdf_files - output_files
+    np_pdf_files = {f'{name}.pdf' for name in diff}
+    return np_pdf_files
 
 def process_images(client, outfile, images):
     responses = []
@@ -158,11 +185,10 @@ def process_single_image(client, outfile, img_b64, page):
     return ocr, processing_time_s
 
 def main():
-    path = pathlib.Path("input")
-    files = [item for item in path.iterdir() if item.is_file()]
+    files = get_non_processed_pdfs()
     for infile in tqdm(files):
         images = convert_to_imgs(infile)
-        outfile = pathlib.Path(infile).stem
+        outfile = Path(infile).stem
         process_images(client, outfile, images)
 
 main()
